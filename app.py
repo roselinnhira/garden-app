@@ -34,8 +34,25 @@ if not DB.exists():
     conn.close()
 
 conn = sqlite3.connect(DB)
+conn.execute("PRAGMA foreign_keys = ON")
 
-st.title("Garden Beds")
+
+
+st.title("Garden Beds by Rose")
+
+# RESET: throw away garden.db so the app builds a fresh one
+if st.button("Reset garden"):
+    conn.close()
+    DB.unlink()
+    st.rerun()
+
+orphans = pd.read_sql_query(
+    "SELECT COUNT(*) AS n FROM bed_log WHERE bed_id NOT IN (SELECT bed_id FROM bed)",
+    conn,
+)["n"][0]
+st.caption(f"Logs with no bed: {orphans}")
+
+
 
 # READ: pick a bed, see its history
 crops = pd.read_sql_query("SELECT crop FROM bed ORDER BY crop", conn)["crop"]
@@ -66,3 +83,24 @@ with st.form("add_visit"):
         )
         conn.commit()
         st.rerun()
+
+# DELETE: remove the bed we picked
+with st.form("remove_bed"):
+    st.write("Remove the bed we picked above")
+    if st.form_submit_button("Remove bed"):
+        try:
+            conn.execute("DELETE FROM bed WHERE crop = ?", (crop,))
+            conn.commit()
+            st.rerun()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            st.error(f"Can't remove {crop}: it still has logs.")
+
+# UPDATE: fix the name of the bed we picked
+with st.form("fix_crop"):
+    new_crop = st.text_input("Fix the name of this bed", value=crop)
+    if st.form_submit_button("Fix name"):
+        conn.execute("UPDATE bed SET crop = ? WHERE crop = ?", (new_crop, crop))
+        conn.commit()
+        st.rerun()
+
